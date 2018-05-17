@@ -7,5 +7,5 @@ This is a group project for CSC529: Advanced Data Mining at DePaul University. T
 
 > data = pd.read_sas('public_v2_042618.sas7bdat')
 ## Bulit With
-..* python
-..* R
+* python
+* R
