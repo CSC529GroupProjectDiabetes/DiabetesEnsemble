@@ -110,6 +110,10 @@ for vars in remrecs:
 	data4 = data4[pd.notnull(data4[vars])]
 # data4.describe().to_csv('descData4.csv')
 
+# Drop the data "PE_COMPLETED" and "BLOOD_SPEC" because they were only
+# used to drop rows
+data4 = data4.drop(["PE_COMPLETED", "BLOOD_SPEC"], axis = 1)
+
 # Export as csv for now to visualize some stuff
 data4.to_csv('public_v2_042618.csv')
 print(list(data4))
