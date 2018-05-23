@@ -63,7 +63,6 @@ ALQ,Alcohol Use,ALQ_1,"In the Past 12 Months, How Often Did {You/SP} Drink Any T
 Probe: How Many Days Per Week, Per Month, or Per Year Did {You/SP} Drink?",
 ALQ,Alcohol Use,ALQ_2,"In the Past 12 Months, on those Days that {You/SP} Drank Alcoholic Beverages, on the Average, How Many Drinks Did {You/He/She} Have? (By a Drink, I Mean a 12 Oz. Beer, a 5 Oz. Glass of Wine, or One and a Half Ounces of Liquor.)",
 INQ,Income,INQ_3,"At Any Time in the Last 12 Months, Even For 1 Month, Did {You/SP} {You/SP and Any Family Members} Receive Any Government Payments Because {Your/SP’S} Income Was Low, Such as Welfare, Public Assistance, AFDC, or Some other Program?",
-INQ,Income,POVGROUP4_0812CT,"Neighborhood Income: Percentage of residents in SP’s census tract with annual income below the Federal Poverty Threshold (4 categories), ACS 2008-2012 data",
 INQ,Income,POVGROUP4_0812,"Neighborhood Income: Percentage of residents in SP’s zip code with annual income below the Federal Poverty Threshold (4 categories), ACS 2008-2012 data",
 SSQ,Social Support,SSQ_1,Is There Someone Available to Whom {You/SP} Can Count on to Listen to {You/Him/Her} When {You Need/S/He Needs} to Talk?,
 SSQ,Social Support,SSQ_2,Is There Someone Available to {You/SP} to Give {You/Him/Her} Good Advice about a Problem?,
