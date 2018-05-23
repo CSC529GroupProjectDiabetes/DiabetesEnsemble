@@ -2,7 +2,7 @@ library(ggplot2)
 library(data.table)
 library(caret)
 
-data <- read.csv('public_v2_042618.csv')
+ori <- read.csv('public_v2_042618.csv')
 
 # Seed number for random number generator: seed
 seed <- 1234
@@ -12,7 +12,8 @@ seed <- 1234
 label <- "DBTS_NEW"
 
 # Drop first column, since it's the index
-data <- data[-c(1)]
+ori <- ori[-c(1)]
+data <- ori
 # Print first 10 rows to compare with shuffled data
 head(data)
 
@@ -23,6 +24,16 @@ numericCol <- c("CAPI_WT", "EXAM_WT", "ACASI_WT", "BLOOD_WT", "SPAGE",
                 "HSQ_2", "HSQ_3", "HSQ_4", "HSQ_5", "OHQ_4", "OHQ_5",
                 "ALQ_1","BMI")
 data[!(names(data) %in% numericCol)] <- lapply(data[!(names(data) %in% numericCol)], factor)
+
+# While we're at it, specify which columns are ordinal/categorical
+ordinalCol <- c("EDU4CAT", "HSQ_1", "PAQ_1", "DBQ_3UNIT", "DBQ_4UNIT",
+                "DBQ_5UNIT", "DBQ_6UNIT", "DBQ_8UNIT", "POVGROUP4_0812",
+                "SSQ_1", "SSQ_2", "SSQ_3", "SSQ_4", "SSQ_5", "SSQ_6")
+factorCol <- c("MARITAL", "BORN", "DMQ_12", "RACE", "HIQ_1", "HUQ_3",
+               "HUQ_14", "OHQ_1", "OHQ_2", "OHQ_3", "BPQ_2", "MCQ_17",
+               "PAQ_2", "PAQ_7", "PAQ_8", "PAQ_11", "PAQ_14", "PAQ_16",
+               "PAQ_17", "PAG2008", "DBQ_2", "SMQ_1", "SMQ_12", "SMQ_14",
+               "SMOKER4CAT", "INQ_3")
 
 # Check if above code worked
 sapply(data, class)
@@ -42,39 +53,52 @@ tmpcolname <- names(data)
 # - Shuffle data
 # - Prepare 10-fold CV (no holdout, since small sample)
 
-# Shuffle data
+# # Shuffle data
+# set.seed(seed)
+# data <- data[sample(1:nrow(data)), ]
+# # Print first 10 rows of shuffled data
+# head(data)
+# 
+# # Show how many people are diabetic
+# summary(data$DBTS_NEW)
+# 
+# # Split k = 10 folds (stratify!)
+# set.seed(seed)
+# folds <- createFolds(factor(data$DBTS_NEW), k = 10, list = FALSE)
+# data$fold <- folds
+
+# If we want to use separate testing set for the end, use this code:
 set.seed(seed)
-data <- data[sample(1:nrow(data)), ]
-# Print first 10 rows of shuffled data
-head(data)
+trainInd <- createDataPartition(factor(data$DBTS_NEW), p = 0.8, list = FALSE)
+train <- data[trainInd, ]
+test <- data[-trainInd, ]
 
-# Show how many people are diabetic
-summary(data$DBTS_NEW)
-
-# Split k = 10 folds (stratify!)
+# Split k = 10 folds
 set.seed(seed)
-folds <- createFolds(factor(data$DBTS_NEW), k = 10, list = FALSE)
-data$fold <- folds
+folds <- createFolds(factor(train$DBTS_NEW), k = 10, list = FALSE)
+train$folds <- folds
 
-# 2) Feature selection
+# 2) Missing data imputation/data normalization
+# =============================================
+# Do imputation and normalization on entire data (since imputing and
+# normalizing for each fold is kind of a hassle)
+
+
+
+
+# 3) Feature selection
 # ====================
 # Try to get down to about 15 features (before dummies)
-# Use 3 methods: chi-square, GINI, random forest
+# In Han paper, used 3 methods: chi-square, GINI, random forest
 
-# Chi-square
-# For each variable
-# If the variable number isn't yindex
-# Get the p.value
-# For every feature available
-# If the colname isn't
-
-# GINI
-
-# Random Forest
+# Trying random forest for now?
 
 
-# 3) SVM
+# 4) SVM
 # ======
+# Try to find best set of support vectors and apply to entire training
+# data for random forest
+
 # For every kernel of SVM
 # Apply CV10
 # Impute missing values
@@ -83,15 +107,15 @@ data$fold <- folds
 # Print table values
 # See which SVM kernel is best
 
-# 4) Make artificial data set
+# 5) Make artificial data set
 # ===========================
-# Create "aritificial" data set with SVM
+# Create "artificial" data set with SVM
 
-# 5) Random forests
+# 6) Random forests
 # =================
-# Ver 1 (control): uses original data set
-# Ver 2: random forest with artificial data
+# Using "artificial" data, do random forest
 
-# Ver 1
-
-# Ver 2
+# 7) Compare with logistic regression
+# ===================================
+# Since logit is commonly used in many diabetes diagnosis data, use the
+# same feature as 
