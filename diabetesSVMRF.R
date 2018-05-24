@@ -1,6 +1,7 @@
 library(ggplot2)
-library(data.table)
 library(caret)
+library(e1071)
+library(missForest)
 
 ori <- read.csv('public_v2_042618.csv')
 
@@ -83,8 +84,17 @@ train$folds <- folds
 # Do imputation and normalization on entire data (since imputing and
 # normalizing for each fold is kind of a hassle)
 
+# Normalize
+trainNorm <- normalize()
 
+# Using random forests to impute using missForest default parameters
+trainImp <- missForest(train)
 
+# Check imputed values
+trainImp$ximp
+
+# Check imputation error
+trainImp$OOBerror
 
 # 3) Feature selection
 # ====================
@@ -97,19 +107,55 @@ train$folds <- folds
 # 4) SVM
 # ======
 # Try to find best set of support vectors and apply to entire training
-# data for random forest
+# data for random forest; use e1071 grid search
 
-# For every kernel of SVM
-# Apply CV10
-# Impute missing values
-# Save results to table
+# NOTE: Using code by statcompute on R-bloggers as basis
+# ======================================================
+# <start>
+pkgs <- c('foreach', 'doParallel')
+lapply(pkgs, require, character.only = T)
+registerDoParallel(cores = 4)
+
+# All feature-selected variables as string
+xvar <- paste()
+fml <- as.formula(paste("as.factor(DBTS_NEW) ~ ", x))
+
+# Hyperparameter ranges to be tested
+cost <- c(10, 100)
+gamma <- c(1, 2)
+parms <- expand.grid(cost = cost, gamma = gamma)
+
+### LOOP THROUGH PARAMETER VALUES ###
+result <- foreach(i = 1:nrow(parms), .combine = rbind) %do% {
+  c <- parms[i, ]$cost
+  g <- parms[i, ]$gamma
+  ### K-FOLD VALIDATION ###
+  out <- foreach(j = 1:max(train$folds), .combine = rbind, .inorder = FALSE) %dopar% {
+    deve <- train[train$folds != j, ]
+    test <- train[train$folds == j, ]
+    mdl <- e1071::svm(fml, data = deve, type = "C-classification", kernel = "radial",
+                      cost = c, gamma = g, probability = TRUE)
+    # Adding a bit of my code to get number of SV's
+    svcount <- length(mdl$SV)
+    pred <- predict(mdl, test, decision.values = TRUE, probability = TRUE)
+    data.frame(y = test$DBTS_NEW, prob = attributes(pred)$probabilities[, 2],
+               sv = svcount)
+  }
+  ### CALCULATE SVM PERFORMANCE ###
+  roc <- pROC::roc(as.factor(out$y), out$prob) 
+  data.frame(parms[i, ], roc = roc$auc[1], out$sv)
+}
+# <end>
 
 # Print table values
+result
+
 # See which SVM kernel is best
 
 # 5) Make artificial data set
 # ===========================
 # Create "artificial" data set with SVM
+
 
 # 6) Random forests
 # =================
