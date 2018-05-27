@@ -23,7 +23,7 @@ head(data)
 # factor; please contact me to discuss this
 numericCol <- c("CAPI_WT", "EXAM_WT", "ACASI_WT", "BLOOD_WT", "SPAGE",
                 "HSQ_2", "HSQ_3", "HSQ_4", "HSQ_5", "OHQ_4", "OHQ_5",
-                "ALQ_1","BMI")
+                "DBQ_2", "ALQ_1","BMI")
 data[!(names(data) %in% numericCol)] <- lapply(data[!(names(data) %in% numericCol)], factor)
 
 # While we're at it, specify which columns are ordinal/categorical
@@ -48,18 +48,18 @@ yindex <- grep(label, colnames(data))
 # Get the list of colnames: tmpcolname
 tmpcolname <- names(data)
 
-# 1) Cross validation set up
+# 1) Training/testing set up
 # ==========================
 # Set up overview:
 # - Shuffle data
 # - Prepare 10-fold CV (no holdout, since small sample)
 
-# # Shuffle data
-# set.seed(seed)
-# data <- data[sample(1:nrow(data)), ]
-# # Print first 10 rows of shuffled data
-# head(data)
-# 
+# Shuffle data
+set.seed(seed)
+data <- data[sample(1:nrow(data)), ]
+# Print first 10 rows of shuffled data
+head(data)
+ 
 # # Show how many people are diabetic
 # summary(data$DBTS_NEW)
 # 
@@ -74,30 +74,63 @@ trainInd <- createDataPartition(factor(data$DBTS_NEW), p = 0.8, list = FALSE)
 train <- data[trainInd, ]
 test <- data[-trainInd, ]
 
-# Split k = 10 folds
-set.seed(seed)
-folds <- createFolds(factor(train$DBTS_NEW), k = 10, list = FALSE)
-train$folds <- folds
-
 # 2) Missing data imputation/data normalization
 # =============================================
 # Do imputation and normalization on entire data (since imputing and
 # normalizing for each fold is kind of a hassle)
 
-# Normalize
-trainNorm <- normalize()
+# Keeps min/max of numeric columns: minMax
+minMax <- function(x){
+  xmin <- min(x, na.rm = T)
+  xmax <- max(x, na.rm = T)
+  return(c(xmin, xmax))
+}
 
-# Using random forests to impute using missForest default parameters
-trainImp <- missForest(train)
+# Data frame containing min/max of each column without NA's: trNumParam
+# Note: row 1 is min, row 2 is max
+trNumParam <- data.frame(apply(train[, numericCol], MARGIN = 2, FUN = minMax))
 
-# Check imputed values
-trainImp$ximp
+# Applies 0-1 normalization to a column: colNorm
+# - x: column of interest
+# - p: associated min and max of columns
+colNorm <- function(x, p){
+  tMin <- p[1,]
+  tMax <- p[2,]
+  return((x - tMin)/(tMax - tMin))
+}
 
-# Check imputation error
-trainImp$OOBerror
+# Do 0-1 normaliztions for all dataframe columns: dfNorm
+# - df: dataframe to be normalized
+# - param: min/max of all columns to be normalized
+dfnorm <- function(df, paramdf){
+  for(n in 1:length(numericCol)){
+    df[, numericCol[n]] <- colNorm(df[numericCol[n]], paramdf[numericCol[n]])
+  }
+  return(df)
+}
+
+# Normalize/impute relevant columns: datamanip
+# * The returned data is a "missForest" data type. To access the imputed
+#   dataframe, use varname$ximp
+datamanip <- function(df, paramdf){
+  tmpdf <- dfnorm(df, paramdf)
+  dfImp <- missForest(tmpdf, variablewise = T)
+  print(dfImp$OOBerror)
+  return(dfImp)
+}
+
+trainImp <- datamanip(train, trNumParam)
+
+normTrain <- trainImp$ximp
 
 # 3) Feature selection
 # ====================
+
+# Split k = 10 folds
+set.seed(seed)
+folds <- createFolds(factor(normTrain$DBTS_NEW), k = 10, list = FALSE)
+normTrain$folds <- folds
+
 # Try to get down to about 15 features (before dummies)
 # In Han paper, used 3 methods: chi-square, GINI, random forest
 
@@ -130,9 +163,9 @@ result <- foreach(i = 1:nrow(parms), .combine = rbind) %do% {
   c <- parms[i, ]$cost
   g <- parms[i, ]$gamma
   ### K-FOLD VALIDATION ###
-  out <- foreach(j = 1:max(train$folds), .combine = rbind, .inorder = FALSE) %dopar% {
-    deve <- train[train$folds != j, ]
-    test <- train[train$folds == j, ]
+  out <- foreach(j = 1:max(normTrain$folds), .combine = rbind, .inorder = FALSE) %dopar% {
+    deve <- normTrain[normTrain$folds != j, ]
+    test <- normTrain[normTrain$folds == j, ]
     mdl <- e1071::svm(fml, data = deve, type = "C-classification", kernel = "radial",
                       cost = c, gamma = g, probability = TRUE)
     # Adding a bit of my code to get number of SV's
