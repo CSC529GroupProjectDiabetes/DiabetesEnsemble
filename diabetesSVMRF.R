@@ -2,6 +2,7 @@ library(ggplot2)
 library(caret)
 library(e1071)
 library(missForest)
+library(randomForest)
 
 ori <- read.csv('public_v2_042618.csv')
 
@@ -102,9 +103,10 @@ colNorm <- function(x, p){
 # Do 0-1 normaliztions for all dataframe columns: dfNorm
 # - df: dataframe to be normalized
 # - param: min/max of all columns to be normalized
-dfnorm <- function(df, paramdf){
-  for(n in 1:length(numericCol)){
-    df[, numericCol[n]] <- colNorm(df[numericCol[n]], paramdf[numericCol[n]])
+# - ncols: list of numeric columns
+dfnorm <- function(df, paramdf, numcols){
+  for(n in 1:length(numcols)){
+    df[, numcols[n]] <- colNorm(df[numcols[n]], paramdf[numcols[n]])
   }
   return(df)
 }
@@ -112,14 +114,14 @@ dfnorm <- function(df, paramdf){
 # Normalize/impute relevant columns: datamanip
 # * The returned data is a "missForest" data type. To access the imputed
 #   dataframe, use varname$ximp
-datamanip <- function(df, paramdf){
-  tmpdf <- dfnorm(df, paramdf)
+datamanip <- function(df, paramdf, numcols){
+  tmpdf <- dfnorm(df, paramdf, numcols)
   dfImp <- missForest(tmpdf, variablewise = T)
   print(dfImp$OOBerror)
   return(dfImp)
 }
 
-trainImp <- datamanip(train, trNumParam)
+trainImp <- datamanip(train, trNumParam, numericCol)
 
 normTrain <- trainImp$ximp
 
@@ -135,6 +137,12 @@ normTrain$folds <- folds
 # In Han paper, used 3 methods: chi-square, GINI, random forest
 
 # Trying random forest for now?
+
+# List of numeric columns after feature extraction: newNumC
+newNumC <- c()
+
+# Dataframe containing only min/max of newNumC: newNumP
+newNumP <- trNumParam[, newNumC]
 
 
 # 4) SVM
@@ -183,18 +191,52 @@ result <- foreach(i = 1:nrow(parms), .combine = rbind) %do% {
 # Print table values
 result
 
-# See which SVM kernel is best
+# See which SVM hyperparameter is best
 
 # 5) Make artificial data set
 # ===========================
-# Create "artificial" data set with SVM
+# Create "artificial" data set with best SVM hyperparameter
 
+# Generate the model with optimal SVM hyperparameter
+
+# Predict labels: predSVM
+
+# Assign feature columns and folds to new dataframe: artificial
+
+# Function to denormalize all numeric variables: deNorm
+deNorm <- function(x, p){
+  tMin <- p[1,]
+  tMax <- p[2,]
+  return(x * (tMax - tMin) + tMin)
+}
+
+# Denormalize all numeric columns: dfNorm
+# - df: dataframe to be denormalized
+# - param: min/max of all columns to be denormalized
+# - ncols: list of numeric columns
+dfDnorm <- function(df, paramdf, numcols){
+  for(n in 1:length(numcols)){
+    df[, numcols[n]] <- deNorm(df[numcols[n]], paramdf[numcols[n]])
+  }
+  return(df)
+}
+
+# Denormalize all normalized variables
+artificial[, newNumC] <- dfDnorm(artificial[, newNumC], newNumP, newNumC)
+
+# Assign predicted labels as new label in artificial data set
+artificial$label <- predSVM
 
 # 6) Random forests
 # =================
-# Using "artificial" data, do random forest
+# Using "artificial" data, do random forest using grid search
 
-# 7) Compare with logistic regression
+
+
+# 7) Apply model to test set
+# ==========================
+
+# 8) Compare with logistic regression
 # ===================================
 # Since logit is commonly used in many diabetes diagnosis data, use the
 # same feature as 
