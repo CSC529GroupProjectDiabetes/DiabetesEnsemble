@@ -3,6 +3,7 @@ library(caret)
 library(e1071)
 library(missForest)
 library(randomForest)
+library(MLmetrics)
 
 ori <- read.csv('public_v2_042618.csv')
 
@@ -133,7 +134,7 @@ set.seed(seed)
 folds <- createFolds(factor(normTrain$DBTS_NEW), k = 10, list = FALSE)
 normTrain$folds <- folds
 
-# Try to get down to about 15 features (before dummies)
+# Try to get down to about 10 features (before dummies)
 # In Han paper, used 3 methods: chi-square, GINI, random forest
 
 # Trying random forest for now?
@@ -191,7 +192,7 @@ result <- foreach(i = 1:nrow(parms), .combine = rbind) %do% {
 # Print table values
 result
 
-# See which SVM hyperparameter is best
+# See which SVM hyperparameter is best with plot
 
 # 5) Make artificial data set
 # ===========================
@@ -201,7 +202,7 @@ result
 
 # Predict labels: predSVM
 
-# Assign feature columns and folds to new dataframe: artificial
+# Assign feature columns to new dataframe: artificial
 
 # Function to denormalize all numeric variables: deNorm
 deNorm <- function(x, p){
@@ -231,6 +232,16 @@ artificial$label <- predSVM
 # =================
 # Using "artificial" data, do random forest using grid search
 
+# This accuracy measure calculates precision, recall, and F1 scores: metric
+metric <- "prSummary"
+conrol <- trainControl(method = "repeatedcv", number = 10, repeats = 3,
+                       search = "random")
+set.seed(seed)
+tunegrid <- expand.grid(.mtry = c(1:15))
+rf_gridsearch <- train(label~., data = artificial, method = "rf",
+                       metric = metric, tuneGrid = tunegrid,
+                       trControl = control)
+plot(rf_gridsearch)
 
 
 # 7) Apply model to test set
