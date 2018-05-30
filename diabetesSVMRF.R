@@ -66,6 +66,9 @@ set.seed(seed)
 data <- data[sample(1:nrow(data)), ]
 # Print first 10 rows of shuffled data
 head(data)
+
+# Apply dummy variables
+data <- dummy.data.frame(data)
  
 # # Show how many people are diabetic
 # summary(data$DBTS_NEW)
@@ -157,9 +160,6 @@ newNumP <- trNumParam[, newNumC]
 # df with only selected features: selectTrain
 selectTrain <- normTrain[, selectFeat]
 selectTrain <- normTrain[, label]
-
-# Generate dummy variables
-selectTrain <- dummy.data.frame(selectTrain)
 
 # 4) SVM
 # ======
