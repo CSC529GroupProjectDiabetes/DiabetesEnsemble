@@ -4,7 +4,10 @@ library(e1071)
 library(missForest)
 library(randomForest)
 library(MLmetrics)
-library(dummy)
+library(dummies)
+library(plyr)
+
+# setwd("C:/Users/Ryoh/Documents/CSC529/CSC529GroupProject")
 
 ori <- read.csv('public_v2_042618.csv')
 
@@ -66,9 +69,6 @@ set.seed(seed)
 data <- data[sample(1:nrow(data)), ]
 # Print first 10 rows of shuffled data
 head(data)
-
-# Apply dummy variables
-data <- dummy.data.frame(data)
  
 # # Show how many people are diabetic
 # summary(data$DBTS_NEW)
@@ -124,6 +124,7 @@ dfnorm <- function(df, paramdf, numcols){
 # * The returned data is a "missForest" data type. To access the imputed
 #   dataframe, use varname$ximp
 datamanip <- function(df, paramdf, numcols){
+  set.seed(seed)
   tmpdf <- dfnorm(df, paramdf, numcols)
   dfImp <- missForest(tmpdf, variablewise = T)
   print(dfImp$OOBerror)
@@ -148,86 +149,83 @@ normTrain$folds <- folds
 # Trying random forest for now?
 
 # List of variables to keep: selectFeat
-selectFeat <- c()
+selectFeat <- c("SPAGE", "MCQ_17", "INQ_3", "HSQ_1", "EDU4CAT", "MARITAL",
+                "BPQ_2", "HUQ_14", "ALQ_1", "OHQ_5", "DBTS_NEW")
 
 # The next two variables are for when we denormalize the data later
 # List of numeric columns after feature extraction: newNumC
-newNumC <- c()
+newNumC <- c(intersect(selectFeat, numericCol))
 
 # Dataframe containing only min/max of newNumC: newNumP
 newNumP <- trNumParam[, newNumC]
 
 # df with only selected features: selectTrain
 selectTrain <- normTrain[, selectFeat]
-selectTrain <- normTrain[, label]
+selectTrain$DBTS_NEW <- normTrain[, label]
+
+# Modify column values to be all 0's and 1's
+# Boolean columns: boolfact
+boolfact <- c("MCQ_17", "INQ_3", "BPQ_2", "HUQ_14")
+selectTrain[, boolfact] <- selectTrain[, boolfact] == 2
+selectTrain[, boolfact] <- sapply(selectTrain[, boolfact], as.numeric)
+
+# Apply dummy variables
+selectTrain <- dummy.data.frame(selectTrain,
+                                names = "MARITAL")
+
 
 # 4) SVM
 # ======
 # Try to find best set of support vectors and apply to entire training
 # data for random forest; use e1071 grid search
 
-# NOTE: Using code by statcompute on R-bloggers as basis
-# ======================================================
-# <start>
-pkgs <- c('foreach', 'doParallel')
-lapply(pkgs, require, character.only = T)
-registerDoParallel(cores = 4)
+set.seed(seed)
+svmControl <- tune.control(random = T, nrepeat = 10, sampling = "cross",
+                           cross = 10)
 
-# All feature-selected variables as string
-xvar <- paste()
-fml <- as.formula(paste("as.factor(DBTS_NEW) ~ ", xvar))
+set.seed(seed)
+svmTune <- tune(svm, DBTS_NEW~., data = selectTrain,
+                ranges = list(gamma = 2 ^ (-5:5),
+                              cost = 2 ^ (-3:7)),
+                tunecontrol = svmControl, scale = F)
 
-# Hyperparameter ranges to be tested
-cost <- c(10, 100)
-gamma <- c(1, 2)
-parms <- expand.grid(cost = cost, gamma = gamma)
+# svmTune <- tune(svm, DBTS_NEW~., data = selectTrain,
+#                 ranges = list(gamma = 2 ^ (-5:1),
+#                               cost = 2 ^ (-1:7)),
+#                 tunecontrol = svmControl, scale = F)
 
-### LOOP THROUGH PARAMETER VALUES ###
-result <- foreach(i = 1:nrow(parms), .combine = rbind) %do% {
-  c <- parms[i, ]$cost
-  g <- parms[i, ]$gamma
-  ### K-FOLD VALIDATION ###
-  out <- foreach(j = 1:max(selectTrain$folds), .combine = rbind, .inorder = FALSE) %dopar% {
-    deve <- selectTrain[selectTrain$folds != j, ]
-    test <- selectTrain[selectTrain$folds == j, ]
-    mdl <- e1071::svm(fml, data = deve, type = "C-classification", kernel = "radial",
-                      cost = c, gamma = g, probability = TRUE)
-    # Adding a bit of my code to get number of SV's
-    svcount <- length(mdl$SV)
-    pred <- predict(mdl, test, decision.values = TRUE, probability = TRUE)
-    data.frame(y = test$DBTS_NEW, prob = attributes(pred)$probabilities[, 2],
-               sv = svcount)
-  }
-  ### CALCULATE SVM PERFORMANCE ###
-  roc <- pROC::roc(as.factor(out$y), out$prob) 
-  data.frame(parms[i, ], roc = roc$auc[1], out$sv)
-}
-# <end>
+# svmTune <- tune(svm, DBTS_NEW~., data = selectTrain,
+#                 ranges = list(cost = 2 ^ (-5:7)),
+#                 kernel = "linear",
+#                 tunecontrol = svmControl, scale = F)
 
-# Print table values
-result
-
-# See which SVM hyperparameter is best with plot
+summary(svmTune)
+plot(svmTune)
 
 # Save best hyperparameters: svmC, svmG
-svmC <- NULL
-svmG <- NULL
+svmC <- 0.5
+svmG <- 8
 
 # 5) Make artificial data set
 # ===========================
 # Create "artificial" data set with best SVM hyperparameter
 
 # Generate the model with optimal SVM hyperparameter: svmMdl
-svmMdl <- e1071::svm(fml, data = selectTrain, type = "C-classification",
+svmMdl <- e1071::svm(DBTS_NEW~., data = selectTrain, type = "C-classification",
                      kernel = "radial", cost = svmC, gamma = svmG,
-                     probability = TRUE)
+                     probability = TRUE, scale = F)
+
+# svmMdl <- e1071::svm(DBTS_NEW~., data = selectTrain, type = "C-classification",
+#                      kernel = "linear", cost = svmC,
+#                      probability = TRUE, scale = F)
 
 # Predict labels: predSVM
 predSVM <- predict(svmMdl, selectTrain, decision.values = TRUE,
                    probability = TRUE)
+SVMcm <- confusionMatrix(predSVM, train$DBTS_NEW)
 
 # Assign feature columns to new dataframe: artificial
-artificial <- selectTrain[, selectFeat]
+artificial <- selectTrain
 
 # Function to denormalize all numeric variables: deNorm
 deNorm <- function(x, p){
@@ -249,55 +247,93 @@ dfDnorm <- function(df, paramdf, numcols){
 
 # Denormalize all normalized variables
 artificial[, newNumC] <- dfDnorm(artificial[, newNumC], newNumP, newNumC)
-
-# Assign predicted labels as new label in artificial data set
 artificial$DBTS_NEW <- predSVM
+artificial$DBTS_NEW <- revalue(artificial$DBTS_NEW, c("1" = "diabetic",
+                                                      "2" = "nondiabetic"))
 
 # 6) Random forests
 # =================
 # Using "artificial" data, do random forest using grid search
 
+# control <- trainControl(method = "repeatedcv", number = 10, repeats = 10,
+                       # search = "grid")
+
 # Used stackOverflow answer as reference:
-customRF <- list(type = "Classification", library = "randomForest", loop = NULL)
-customRF$parameters <- data.frame(parameter = c("mtry", "ntree", "nodesize"),
-                                  class = rep("numeric", 3),
-                                  label = c("mtry", "ntree", "nodesize"))
-customRF$grid <- function(x, y, len = NULL, search = "grid") {}
-customRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs, ...) {
-  randomForest(x, y, mtry = param$mtry, ntree=param$ntree,
-               nodesize=param$nodesize, ...)
-}
-customRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
-  predict(modelFit, newdata)
-customRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
-  predict(modelFit, newdata, type = "prob")
-customRF$sort <- function(x) x[order(x[,1]),]
-customRF$levels <- function(x) x$classes
-
-# This accuracy measure calculates precision, recall, and F1 scores: metric
-metric <- "prSummary"
-
-conrol <- trainControl(method = "repeatedcv", number = 10, repeats = 3,
-                       search = "random")
-set.seed(seed)
-
-# Choose hyperparameter ranges accordingly
-tunegrid <- expand.grid(mtry = c(1:15), ntree = c(1:15),
-                        nodesize = c(1:15))
-set.seed(seed)
-rf_gridsearch <- train(label~., data = artificial, method = "customRF",
-                       metric = metric, tuneGrid = tunegrid,
-                       trControl = control)
+# customRF <- list(type = "Classification", library = "randomForest", loop = NULL)
+# customRF$parameters <- data.frame(parameter = c("mtry", "ntree", "nodesize"),
+#                                   class = rep("numeric", 3),
+#                                   label = c("mtry", "ntree", "nodesize"))
+# customRF$grid <- function(x, y, len = NULL, search = "grid") {}
+# customRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs, ...) {
+#   randomForest(x, y, mtry = param$mtry, ntree=param$ntree,
+#                nodesize=param$nodesize, ...)
+# }
+# customRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+#   predict(modelFit, newdata)
+# customRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+#   predict(modelFit, newdata, type = "prob")
+# customRF$sort <- function(x) x[order(x[,1]),]
+# customRF$levels <- function(x) x$classes
+# 
+# customRFinfo <- getModelInfo(model = "customRF", regex = F)[[1]]
+# 
+# # This accuracy measure calculates precision, recall, and F1 scores: metric
+# metric <- "prSummary"
+# 
+# set.seed(seed)
+# 
+# # Choose hyperparameter ranges accordingly
+# tunegrid <- expand.grid(mtry = c(1:15), ntree = c(1:15),
+#                         nodesize = c(1:15))
+# set.seed(seed)
+# rf_gridsearch <- train(DBTS_NEW~., data = artificial, method = "customRF",
+#                        metric = metric, tuneGrid = tunegrid,
+#                        trControl = control)
 
 # Choose best hyperparameter
-plot(rf_gridsearch)
+# plot(rf_gridsearch)
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid",
+                        summaryFunction = twoClassSummary, classProbs = T)
+
+tunegrid <- expand.grid(.mtry=c(sqrt(ncol(artificial))))
+modellist <- list()
+for (ntree in c(10, 50, 100, 1000)) {
+  set.seed(seed)
+  fit <- train(DBTS_NEW ~ ., data=artificial, method="rf", metric = "ROC",
+               tuneGrid=tunegrid, trControl=control, ntree=ntree)
+  key <- toString(ntree)
+  modellist[[key]] <- fit
+}
+# compare results
+results <- resamples(modellist)
+summary(results)
+dotplot(results)
+
+tunegrid <- expand.grid(.mtry=c(sqrt(ncol(artificial))))
+modellist <- list()
+for (ntree in c(10, 20, 30, 40, 50)) {
+  set.seed(seed)
+  fit <- train(DBTS_NEW ~ ., data=artificial, method="rf", metric = "ROC",
+               tuneGrid=tunegrid, trControl=control, ntree=ntree)
+  key <- toString(ntree)
+  modellist[[key]] <- fit
+}
+# compare results
+results <- resamples(modellist)
+summary(results)
+dotplot(results)
+
+# ntree = 20 looks pretty like the "knee"
+# for (nodesize)
+
 
 # Best random forest hyperparameter: rfmtry, rfntree, rfnodeS
 
 # Compare predicted results with original training set lables
 set.seed(seed)
 rfMdl <- randomForest(fml, data = artificial, mtry = rfmtry,
-                      ntree = rfntree, nodesize = rfnodeS)
+                      ntree = rfntree)
 predrf <- predict(rfMdl)
 
 # Confusion matrix of SVM + RF training model: rfcm
@@ -321,15 +357,3 @@ normTrain <- trainImp$ximp
 # Denormalize
 
 # Predict using random forest model from training
-
-
-# 8) Compare with logistic regression
-# ===================================
-# Since logit is commonly used in many diabetes diagnosis data, use the
-# same feature as 
-
-# Use normalized data from training in 10-fold CV for logit
-
-# Predict using logit parameters
-
-# Compare with SVM+RF model
